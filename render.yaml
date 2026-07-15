@@ -12,7 +12,10 @@ services:
     rootDir: backend
     plan: free
     buildCommand: "./build.sh"
-    startCommand: "gunicorn config.wsgi:application"
+    # Must bind 0.0.0.0:$PORT. Render assigns the port via $PORT and routes to it;
+    # bare gunicorn defaults to 127.0.0.1:8000, which Render's router can't reach —
+    # the service builds fine but never passes its health check and the deploy hangs.
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT"
     healthCheckPath: /health/
     envVars:
       - key: DATABASE_URL
@@ -22,10 +25,16 @@ services:
       - key: DEBUG
         value: "False"
       - key: ALLOWED_HOSTS
-        fromService: # Render injects this service's own public hostname
-          type: web
-          name: eztrack-api
-          property: host
+        # "*" because Render's health check hits the service from an INTERNAL
+        # address, not the public hostname — so pinning ALLOWED_HOSTS to the public
+        # host makes Django 400 every health check (DisallowedHost) and the deploy
+        # hangs forever. The internal address is unpredictable, so it can't be listed.
+        #
+        # Safe for THIS app: Render's edge proxy is the only ingress and already
+        # validates the public hostname before forwarding, and the app generates no
+        # absolute URLs (no password-reset emails, no host-based redirects), so
+        # there's no Host-header-poisoning surface to protect. Revisit if that changes.
+        value: "*"
       - key: CORS_ALLOW_ALL_ORIGINS
         value: "False"
       # Required because we connect through Supabase's transaction-mode pooler.
