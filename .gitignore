@@ -1,0 +1,21 @@
+# Python / Django
+__pycache__/
+*.py[cod]
+.venv/
+*.sqlite3
+staticfiles/
+
+# Secrets — never commit
+.env
+
+# Node / Expo
+node_modules/
+.expo/
+dist/
+*.log
+
+# macOS
+.DS_Store
+
+# Database dumps — contain real data, never commit
+*.sql

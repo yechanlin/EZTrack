@@ -1,0 +1,36 @@
+# Render blueprint: runs Django. The database lives in Supabase, so there's
+# deliberately no `databases:` block here.
+#
+# Setup: New -> Blueprint -> point at this repo, then paste the Supabase
+# connection string into DATABASE_URL in the Render dashboard (it's marked
+# sync:false, so Render prompts for it rather than reading it from this file —
+# it's a secret and must never be committed).
+services:
+  - type: web
+    name: eztrack-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application"
+    healthCheckPath: /health/
+    envVars:
+      - key: DATABASE_URL
+        sync: false # set by hand in the dashboard: the Supabase pooler URI
+      - key: SECRET_KEY
+        generateValue: true # Render generates a strong random value
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        fromService: # Render injects this service's own public hostname
+          type: web
+          name: eztrack-api
+          property: host
+      - key: CORS_ALLOW_ALL_ORIGINS
+        value: "False"
+      # Required because we connect through Supabase's transaction-mode pooler.
+      # See the comment in config/settings.py.
+      - key: DB_DISABLE_SERVER_SIDE_CURSORS
+        value: "True"
+      - key: PYTHON_VERSION
+        value: "3.12.0"
