@@ -1,7 +1,22 @@
 from django.db.models import Q
 from rest_framework import serializers
 
-from .models import Balance, Budget, Category, Expense, Income
+from .models import Balance, Budget, Category, Expense, Income, RecurringExpense
+
+
+def validate_owned_category(user, category):
+    """Reject a category the user isn't allowed to reference.
+
+    Only global defaults (user IS NULL) and the user's own categories are valid.
+    Without this, one user could POST against another's private category id and leak
+    its name back in the response. Shared by the Expense and RecurringExpense
+    serializers so the rule can't drift between them.
+    """
+    if category.user_id is not None and category.user_id != user.id:
+        raise serializers.ValidationError("That category does not exist.")
+    if category.is_archived:
+        raise serializers.ValidationError("That category has been archived.")
+    return category
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -45,15 +60,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
         read_only_fields = ("created_at",)
 
     def validate_category(self, category):
-        # CRITICAL: without this check, user A could POST an expense referencing
-        # user B's private category id, which would leak B's category name back to
-        # A through category_name. Only global categories and your own are valid.
-        user = self.context["request"].user
-        if category.user_id is not None and category.user_id != user.id:
-            raise serializers.ValidationError("That category does not exist.")
-        if category.is_archived:
-            raise serializers.ValidationError("That category has been archived.")
-        return category
+        return validate_owned_category(self.context["request"].user, category)
 
     def validate_amount(self, value):
         if value <= 0:
@@ -71,6 +78,44 @@ class IncomeSerializer(serializers.ModelSerializer):
         if value <= 0:
             raise serializers.ValidationError("Amount must be greater than zero.")
         return value
+
+
+class RecurringExpenseSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source="category.name", read_only=True)
+
+    class Meta:
+        model = RecurringExpense
+        fields = (
+            "id", "amount", "category", "category_name", "note",
+            "frequency", "anchor_day", "start_date", "next_run", "active",
+        )
+        # next_run is the generation cursor, managed by the service — never client-set.
+        read_only_fields = ("next_run",)
+
+    def validate_category(self, category):
+        return validate_owned_category(self.context["request"].user, category)
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Amount must be greater than zero.")
+        return value
+
+    def validate(self, attrs):
+        # anchor_day's valid range depends on frequency, so it's cross-field.
+        # On PATCH, fall back to the instance for whichever field wasn't sent.
+        frequency = attrs.get("frequency") or getattr(self.instance, "frequency", None)
+        anchor = attrs.get("anchor_day", getattr(self.instance, "anchor_day", None))
+        if anchor is not None and frequency == RecurringExpense.WEEKLY:
+            if not 0 <= anchor <= 6:
+                raise serializers.ValidationError(
+                    {"anchor_day": "Weekly rules use 0 (Mon) to 6 (Sun)."}
+                )
+        elif anchor is not None:  # monthly
+            if not 1 <= anchor <= 31:
+                raise serializers.ValidationError(
+                    {"anchor_day": "Monthly rules use a day from 1 to 31."}
+                )
+        return attrs
 
 
 class BalanceSerializer(serializers.ModelSerializer):

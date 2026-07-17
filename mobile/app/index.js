@@ -1,5 +1,5 @@
 import { Link, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "../src/auth/AuthContext";
-import { useBalance, useExpenses, useSummary } from "../src/api/hooks";
+import { useBalance, useExpenses, useRunRecurring, useSummary } from "../src/api/hooks";
 import { Card, ErrorBanner } from "../src/components/ui";
 import { currentYearMonth, formatMoney, monthLabel, shortDate } from "../src/format";
 import { colors, font, radius, spacing } from "../src/theme";
@@ -27,8 +27,13 @@ export default function HomeScreen() {
   const balance = useBalance();
   const summary = useSummary(year, month);
   const expenses = useExpenses(year, month);
+  const runRecurring = useRunRecurring();
 
   const [refreshing, setRefreshing] = useState(false);
+  // Materialize recurring expenses once per app session, not on every screen focus —
+  // it's the app-open catch-up, not something to redo each time you return from
+  // History. (The endpoint is idempotent regardless; this just avoids the noise.)
+  const didRunRecurring = useRef(false);
 
   const refetchAll = useCallback(async () => {
     await Promise.all([balance.refetch(), summary.refetch(), expenses.refetch()]);
@@ -40,8 +45,15 @@ export default function HomeScreen() {
   // is looked at again.
   useFocusEffect(
     useCallback(() => {
+      if (!didRunRecurring.current) {
+        didRunRecurring.current = true;
+        // On first focus this session, post any recurring expenses that came due
+        // while the app was closed. Its onSuccess invalidates the ledger, so new
+        // occurrences flow into the queries below without an extra refetch here.
+        runRecurring.mutate();
+      }
       refetchAll();
-    }, [refetchAll]),
+    }, [refetchAll, runRecurring]),
   );
 
   async function onPullToRefresh() {
@@ -85,6 +97,9 @@ export default function HomeScreen() {
         <View style={s.header}>
           <Text style={font.h2}>EZTrack</Text>
           <View style={s.headerActions}>
+            <Link href="/recurring" style={s.headerLink}>
+              Recurring
+            </Link>
             <Link href="/history" style={s.headerLink}>
               History
             </Link>

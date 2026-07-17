@@ -82,6 +82,7 @@ function RootNavigator() {
       {/* History is a real page, so it pushes normally and gets a back button. */}
       <Stack.Screen name="history" options={{ title: "History" }} />
       <Stack.Screen name="month/[ym]" options={{ title: "" }} />
+      <Stack.Screen name="recurring" options={{ title: "Recurring" }} />
     </Stack>
   );
 }

@@ -10,16 +10,17 @@ from rest_framework.generics import RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Balance, Budget, Category, Expense, Income
+from .models import Balance, Budget, Category, Expense, Income, RecurringExpense
 from .serializers import (
     BalanceSerializer,
     BudgetSerializer,
     CategorySerializer,
     ExpenseSerializer,
     IncomeSerializer,
+    RecurringExpenseSerializer,
     SummarySerializer,
 )
-from .services import recalculate_balance
+from .services import generate_due_recurring, recalculate_balance
 
 ZERO = Decimal("0.00")
 
@@ -131,6 +132,36 @@ class ExpenseViewSet(OwnedLedgerViewSet):
 class IncomeViewSet(OwnedLedgerViewSet):
     model = Income
     serializer_class = IncomeSerializer
+
+
+class RecurringExpenseViewSet(viewsets.ModelViewSet):
+    """CRUD for recurring rules. A rule is a template, not a ledger entry — creating
+    or editing one doesn't move the balance, so this deliberately does NOT recompute
+    the balance (unlike OwnedLedgerViewSet). The Expenses it later generates do, via
+    generate_due_recurring()."""
+
+    serializer_class = RecurringExpenseSerializer
+    http_method_names = ["get", "post", "patch", "delete"]
+
+    def get_queryset(self):
+        return RecurringExpense.objects.filter(user=self.request.user).select_related("category")
+
+    def perform_create(self, serializer):
+        # next_run starts at start_date — the first occurrence the rule owes. The owner
+        # comes from the token, never the request body.
+        serializer.save(
+            user=self.request.user,
+            next_run=serializer.validated_data["start_date"],
+        )
+
+
+class RunRecurringView(APIView):
+    """Materialize any recurring occurrences due up to today. Called by the app on
+    launch — cheap and idempotent, so a redundant call is harmless."""
+
+    def post(self, request):
+        created = generate_due_recurring(request.user)
+        return Response({"created": created})
 
 
 class BalanceView(RetrieveAPIView):

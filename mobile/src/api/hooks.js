@@ -12,6 +12,7 @@ export const keys = {
   expenses: (y, m) => ["expenses", y, m],
   months: ["months"],
   budget: (y, m) => ["budget", y, m],
+  recurring: ["recurring"],
 };
 
 /**
@@ -129,5 +130,60 @@ export function useSetBudget() {
         qc.invalidateQueries({ queryKey: keys.budget(year, month) }),
         qc.invalidateQueries({ queryKey: ["summary"] }), // budget feeds `remaining`
       ]),
+  });
+}
+
+// recurring ------------------------------------------------------------------
+
+export function useRecurring() {
+  return useQuery({
+    queryKey: keys.recurring,
+    queryFn: async () => {
+      const data = await api.get("/api/recurring/");
+      return data.results ?? data;
+    },
+  });
+}
+
+export function useCreateRecurring() {
+  const qc = useQueryClient();
+  const invalidate = useLedgerInvalidation();
+  return useMutation({
+    mutationFn: (body) => api.post("/api/recurring/", body),
+    // Creating a rule doesn't post an expense by itself — the app calls run() next,
+    // which can move the balance — so refresh both the rule list and the ledger.
+    onSuccess: () =>
+      Promise.all([qc.invalidateQueries({ queryKey: keys.recurring }), invalidate()]),
+  });
+}
+
+export function useUpdateRecurring() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }) => api.patch(`/api/recurring/${id}/`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.recurring }),
+  });
+}
+
+export function useDeleteRecurring() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/api/recurring/${id}/`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.recurring }),
+  });
+}
+
+/**
+ * Materialize any recurring occurrences due since the app was last opened. Called
+ * once on launch; idempotent server-side, so a redundant call is harmless. Only
+ * touches the ledger when it actually created something.
+ */
+export function useRunRecurring() {
+  const invalidate = useLedgerInvalidation();
+  return useMutation({
+    mutationFn: () => api.post("/api/recurring/run/", {}),
+    onSuccess: (data) => {
+      if (data?.created > 0) return invalidate();
+    },
   });
 }

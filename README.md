@@ -112,12 +112,14 @@ To point the app somewhere else (e.g. the deployed backend), set
 ## Data models
 
 ```
-User          email (login identifier), password
-Category      name, user (NULL = a global default), is_archived
-Expense       user, amount, category, note, date, created_at
-Income        user, amount, note, date, created_at
-Balance       user, current_amount, updated_at        -- cache; see above
-Budget        user, year, month, amount               -- optional monthly target
+User              email (login identifier), password
+Category          name, user (NULL = a global default), is_archived
+Expense           user, amount, category, note, date, created_at, source_recurring
+Income            user, amount, note, date, created_at
+Balance           user, current_amount, updated_at        -- cache; see above
+Budget            user, year, month, amount               -- optional monthly target
+RecurringExpense  user, amount, category, note, frequency, anchor_day,
+                  start_date, next_run, active            -- template, not a ledger entry
 ```
 
 Notes:
@@ -130,6 +132,12 @@ Notes:
   `date__month`.
 - **`Expense.category` is `PROTECT`**, so a category that's been spent against can't
   be deleted — it gets archived instead.
+- **`RecurringExpense` is a template, not a ledger entry.** It never touches the
+  balance itself; it produces `Expense` rows on a schedule. `next_run` is a cursor —
+  the date of the next occurrence still owed. Each generated expense links back via
+  `Expense.source_recurring` (`SET_NULL`, so deleting a rule keeps the expenses it
+  already posted), and a unique constraint on `(source_recurring, date)` makes
+  generation idempotent — the same occurrence can't be posted twice.
 
 ---
 
@@ -154,10 +162,19 @@ login. Every query is scoped to the authenticated user.
 | GET | `/api/summary/?year=&month=` | **Powers the whole home screen in one call** |
 | GET | `/api/months/` | Months with activity, newest first (History list) |
 | GET/PUT/DELETE | `/api/budget/?year=&month=` | PUT upserts |
+| GET/POST | `/api/recurring/` | Recurring rules; POST sets `next_run` = `start_date` |
+| GET/PATCH/DELETE | `/api/recurring/:id/` | PATCH `active` to pause/resume |
+| POST | `/api/recurring/run/` | Materialize occurrences due up to today; returns `{created}` |
 
 `/api/summary/` and `/api/months/` aggregate **server-side** on purpose. The
 alternative — send every expense and sum them in JS — makes the app download the
 user's entire ledger just to render six numbers.
+
+**Recurring expenses have no scheduler.** Render's free tier has no cron, so instead
+of a background job, the app calls `POST /api/recurring/run/` once on launch and the
+backend posts anything due since last time. It's idempotent (safe to call repeatedly)
+and means no phantom expenses accrue while the app is unused — closed for three
+months, the next open catches everything up at once.
 
 ---
 
@@ -167,21 +184,28 @@ user's entire ledger just to render six numbers.
 |---|---|
 | **Login / Register** | Tokens stored in the device keychain (`expo-secure-store`) |
 | **Home** | Balance, budget progress, category breakdown, expense list, `+` button |
-| **Add expense** (modal) | Amount, category, note, date (defaults to today) |
+| **Add expense** (modal) | Amount, category, note, native date picker; "Repeat monthly" toggle to make it recurring |
 | **Edit / delete expense** (modal) | Balance follows automatically — no client-side arithmetic |
 | **Add money** (modal) | Income, top-ups, or your starting balance |
 | **Monthly budget** (modal) | Optional spending target for the month |
 | **History** | List of past months → read-only breakdown for each |
+| **Recurring** | Manage recurring rules — pause/resume or delete |
+
+Dates use a **native date picker** (`@react-native-community/datetimepicker`), not a
+typed `YYYY-MM-DD` field — it stores the same string, just without the typing or the
+timezone foot-guns.
 
 ---
 
 ## Tests
 
 ```bash
-cd backend && .venv/bin/python manage.py test    # 27 tests
+# Run against LOCAL Postgres — the Supabase pooler blocks the test DB create/drop.
+DATABASE_URL=postgres://<you>@localhost:5432/eztrack \
+  .venv/bin/python manage.py test    # 43 tests
 ```
 
-Three areas, chosen because they're where a bug would actually hurt:
+Four areas, chosen because they're where a bug would actually hurt:
 
 - **`test_balance.py`** — the balance is the number the user looks at and the one
   most likely to be quietly wrong. Covers edit-up, edit-down, delete, backdating,
@@ -195,14 +219,26 @@ Three areas, chosen because they're where a bug would actually hurt:
   forces the exact interleaving with two sequenced threads. **Verified it fails
   when the lock is removed** — a concurrency test that passes either way is worse
   than no test, because it implies coverage it doesn't have.
+- **`test_recurring.py`** — generation must be idempotent and correct however long
+  the app has been closed. Covers catch-up across missed months, month-end anchor
+  clamping (the 31st → Feb 28/29), paused rules, and the load-bearing one: running
+  generation twice must never double-post.
 
 ---
 
 ## Deploying
 
 `render.yaml` is a Render blueprint: point Render at this repo (New → Blueprint)
-and it creates the web service and the Postgres database, runs migrations, and
-seeds the default categories.
+and it creates the Django web service, runs migrations, and seeds the default
+categories. The database is hosted separately on **Supabase**; paste its pooler
+connection string into `DATABASE_URL` in the Render dashboard.
+
+**Connect via the Supabase transaction pooler (port 6543), not the direct host** —
+the direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from Render's
+IPv4 egress. The pooler in turn requires `DB_DISABLE_SERVER_SIDE_CURSORS=True`
+(set in `render.yaml`): a transaction-mode pooler can move your connection between
+backends mid-request, and server-side cursors don't survive that, so paginated
+queries would 500 in production only.
 
 Then set `EXPO_PUBLIC_API_URL` in `mobile/.env` to the deployed URL and rebuild
 the app.
@@ -219,6 +255,12 @@ effectively irreversible.
 
 ## Recent updates
 
+- **Recurring expenses + native date picker.** Mark an expense "Repeat monthly" and
+  it posts itself each period (rent, subscriptions, gym). No scheduler — the app
+  materializes due occurrences on launch via `POST /api/recurring/run/`, idempotently.
+  Dates are now a native picker instead of a typed `YYYY-MM-DD` field.
+- **Database moved to Supabase.** Django runs on Render; Postgres is hosted on
+  Supabase, connected through its transaction pooler. See [Deploying](#deploying).
 - **Income + derived balance.** The balance is now recomputed from the ledger after
   every write instead of being patched by deltas, and there's a way to add money.
 - **Multi-user + JWT auth.** Every model is owned by a user; every query is scoped

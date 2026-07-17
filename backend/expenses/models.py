@@ -69,6 +69,16 @@ class Expense(models.Model):
     date = models.DateField()
     # When the row was created. System bookkeeping, never shown to the user.
     created_at = models.DateTimeField(auto_now_add=True)
+    # Set when this expense was auto-created by a recurring rule (NULL for one-offs).
+    # SET_NULL, not CASCADE: deleting the rule must NOT delete the expenses it already
+    # posted — those are real spending that happened.
+    source_recurring = models.ForeignKey(
+        "RecurringExpense",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="generated",
+    )
 
     class Meta:
         ordering = ["-date", "-created_at"]
@@ -76,6 +86,16 @@ class Expense(models.Model):
             # Every read is "this user's expenses, in this month" — so index the
             # pair, not each column separately.
             models.Index(fields=["user", "date"]),
+        ]
+        constraints = [
+            # One occurrence per (rule, date). This is what makes generation
+            # idempotent: a second `run` can't post the same day twice, even under
+            # two concurrent requests. NULLs are exempt (many one-off expenses can
+            # share a date), which is exactly what we want.
+            models.UniqueConstraint(
+                fields=["source_recurring", "date"],
+                name="unique_recurring_occurrence_per_date",
+            ),
         ]
 
     def __str__(self):
@@ -146,3 +166,42 @@ class Budget(models.Model):
 
     def __str__(self):
         return f"{self.year}-{self.month:02d}: {self.amount}"
+
+
+class RecurringExpense(models.Model):
+    """A rule that auto-creates an Expense on a schedule.
+
+    This is a *template*, not a ledger entry — it produces Expense rows but isn't one
+    itself, so it never touches the balance directly. `next_run` is a cursor: the date
+    of the next occurrence still owed. generate_due_recurring() advances it as it posts
+    occurrences, so catching up after the app has been closed for months is just
+    "keep posting until next_run passes today".
+    """
+
+    MONTHLY = "monthly"
+    WEEKLY = "weekly"
+    FREQUENCY_CHOICES = [(MONTHLY, "Monthly"), (WEEKLY, "Weekly")]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="recurring"
+    )
+    amount = models.DecimalField(**MONEY, validators=POSITIVE)
+    category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="recurring")
+    note = models.CharField(max_length=200, blank=True)
+
+    frequency = models.CharField(max_length=10, choices=FREQUENCY_CHOICES, default=MONTHLY)
+    # monthly: day of month 1-31 (clamped to the month's length at generation time, so
+    #          31 posts on Feb 28/29). weekly: weekday 0=Mon .. 6=Sun.
+    anchor_day = models.PositiveSmallIntegerField()
+
+    start_date = models.DateField()  # first date this rule may generate
+    next_run = models.DateField()    # cursor: date of the next occurrence still owed
+    active = models.BooleanField(default=True)  # paused rules generate nothing
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "active", "next_run"])]
+
+    def __str__(self):
+        return f"{self.amount} {self.frequency} (next {self.next_run})"

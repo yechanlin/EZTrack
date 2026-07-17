@@ -3,6 +3,7 @@ import { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from "react-native";
 
 import { useCreateIncome } from "../src/api/hooks";
+import DateField from "../src/components/DateField";
 import { Button, ErrorBanner, Field } from "../src/components/ui";
 import { todayLocal } from "../src/format";
 import { font, spacing } from "../src/theme";
@@ -62,13 +63,7 @@ export default function IncomeScreen() {
           placeholder="Paycheck, refund, …"
           maxLength={200}
         />
-        <Field
-          label="Date"
-          value={date}
-          onChangeText={setDate}
-          placeholder="YYYY-MM-DD"
-          autoCapitalize="none"
-        />
+        <DateField label="Date" value={date} onChange={setDate} />
 
         <Button title="Add money" onPress={submit} loading={create.isPending} />
       </ScrollView>

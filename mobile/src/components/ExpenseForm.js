@@ -1,14 +1,28 @@
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from "react-native";
 
 import { todayLocal } from "../format";
-import { spacing } from "../theme";
+import { colors, font, spacing } from "../theme";
 import CategoryPicker from "./CategoryPicker";
+import DateField from "./DateField";
 import { Button, ErrorBanner, Field } from "./ui";
 
 /**
  * Shared by the "add expense" and "edit expense" screens. Both submit the same
  * shape; only the endpoint and the buttons differ.
+ *
+ * `allowRecurring` (add screen only) shows a "Repeat monthly" switch. When it's on,
+ * the submitted payload carries `repeat: true`; the parent decides what to do with
+ * that (create a recurring rule instead of a one-off). Keeping the branching out of
+ * here lets the edit screen reuse the form untouched.
  */
 export default function ExpenseForm({
   initial,
@@ -18,11 +32,13 @@ export default function ExpenseForm({
   error,
   onDelete,
   deleting,
+  allowRecurring = false,
 }) {
   const [amount, setAmount] = useState(initial?.amount ? String(initial.amount) : "");
   const [categoryId, setCategoryId] = useState(initial?.category ?? null);
   const [note, setNote] = useState(initial?.note ?? "");
   const [date, setDate] = useState(initial?.date ?? todayLocal());
+  const [repeat, setRepeat] = useState(false);
   const [localError, setLocalError] = useState(null);
 
   function submit() {
@@ -35,14 +51,18 @@ export default function ExpenseForm({
       setLocalError("Pick a category.");
       return;
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      setLocalError("Date must look like 2026-07-12.");
-      return;
-    }
+    // Date no longer needs format validation — the picker only ever yields a valid
+    // YYYY-MM-DD, so there's no bad input to guard against.
     setLocalError(null);
     // Send the amount as a string. The server stores it as an exact Decimal, and
     // a JS float round-trip is exactly how cents go missing.
-    onSubmit({ amount: parsed.toFixed(2), category: categoryId, note: note.trim(), date });
+    onSubmit({
+      amount: parsed.toFixed(2),
+      category: categoryId,
+      note: note.trim(),
+      date,
+      repeat: allowRecurring && repeat,
+    });
   }
 
   return (
@@ -77,13 +97,23 @@ export default function ExpenseForm({
           maxLength={200}
         />
 
-        <Field
-          label="Date"
-          value={date}
-          onChangeText={setDate}
-          placeholder="YYYY-MM-DD"
-          autoCapitalize="none"
-        />
+        <DateField label="Date" value={date} onChange={setDate} />
+
+        {allowRecurring ? (
+          <View style={s.repeatRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={font.body}>Repeat monthly</Text>
+              <Text style={font.caption}>
+                Auto-adds this on the {ordinal(dayOf(date))} of each month.
+              </Text>
+            </View>
+            <Switch
+              value={repeat}
+              onValueChange={setRepeat}
+              trackColor={{ true: colors.primary }}
+            />
+          </View>
+        ) : null}
 
         <Button title={submitLabel} onPress={submit} loading={submitting} />
 
@@ -101,6 +131,24 @@ export default function ExpenseForm({
   );
 }
 
+// "2026-07-05" -> 5
+function dayOf(iso) {
+  return Number(iso.split("-")[2]);
+}
+
+// 1 -> "1st", 2 -> "2nd", 21 -> "21st". Just for the helper text.
+function ordinal(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 const s = StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
+  repeatRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
 });

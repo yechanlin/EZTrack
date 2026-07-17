@@ -55,3 +55,26 @@ export function shortDate(iso) {
   const [y, m, d] = iso.split("-").map(Number);
   return `${MONTH_NAMES[m - 1].slice(0, 3)} ${d}`;
 }
+
+/** "2026-07-12" -> "Jul 12, 2026" (for the date-picker button label) */
+export function longDate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${MONTH_NAMES[m - 1].slice(0, 3)} ${d}, ${y}`;
+}
+
+/**
+ * Convert between a YYYY-MM-DD string and a JS Date using LOCAL calendar fields.
+ *
+ * Same timezone trap as todayLocal(): `new Date("2026-07-12")` parses as UTC
+ * midnight, which is the 11th in the Americas — so the picker would open on the
+ * wrong day. Building from explicit (y, m-1, d) keeps it in the device's timezone.
+ */
+export function isoToDate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+export function dateToIso(dateObj) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())}`;
+}
