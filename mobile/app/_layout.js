@@ -76,7 +76,11 @@ function RootNavigator() {
         name="expense/[id]"
         options={{ presentation: "modal", title: "Edit expense" }}
       />
-      <Stack.Screen name="income" options={{ presentation: "modal", title: "Add money" }} />
+      {/* Income list is a real page (pushes with a back button); add/edit slide up
+          as modals, matching the expense screens. */}
+      <Stack.Screen name="income/index" options={{ title: "Income" }} />
+      <Stack.Screen name="income/new" options={{ presentation: "modal", title: "Add money" }} />
+      <Stack.Screen name="income/[id]" options={{ presentation: "modal", title: "Edit income" }} />
       <Stack.Screen name="budget" options={{ presentation: "modal", title: "Monthly budget" }} />
 
       {/* History is a real page, so it pushes normally and gets a back button. */}

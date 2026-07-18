@@ -13,6 +13,7 @@ export const keys = {
   months: ["months"],
   budget: (y, m) => ["budget", y, m],
   recurring: ["recurring"],
+  income: (y, m) => ["income", y, m],
 };
 
 /**
@@ -30,6 +31,20 @@ function useLedgerInvalidation() {
       qc.invalidateQueries({ queryKey: ["summary"] }),
       qc.invalidateQueries({ queryKey: ["expenses"] }),
       qc.invalidateQueries({ queryKey: keys.months }),
+    ]);
+}
+
+/**
+ * Income moves the balance but not the spending summary or the expense list, and it
+ * has its own per-month list to refresh. `months`/`summary` are expense-derived, so
+ * they're deliberately left out.
+ */
+function useIncomeInvalidation() {
+  const qc = useQueryClient();
+  return () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: keys.balance }),
+      qc.invalidateQueries({ queryKey: ["income"] }),
     ]);
 }
 
@@ -78,6 +93,16 @@ export function useBudget(year, month) {
   });
 }
 
+export function useIncome(year, month) {
+  return useQuery({
+    queryKey: keys.income(year, month),
+    queryFn: async () => {
+      const data = await api.get(`/api/income/?year=${year}&month=${month}`);
+      return data.results ?? data;
+    },
+  });
+}
+
 // writes ---------------------------------------------------------------------
 
 export function useCreateExpense() {
@@ -105,9 +130,25 @@ export function useDeleteExpense() {
 }
 
 export function useCreateIncome() {
-  const invalidate = useLedgerInvalidation();
+  const invalidate = useIncomeInvalidation();
   return useMutation({
     mutationFn: (body) => api.post("/api/income/", body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateIncome() {
+  const invalidate = useIncomeInvalidation();
+  return useMutation({
+    mutationFn: ({ id, ...body }) => api.patch(`/api/income/${id}/`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteIncome() {
+  const invalidate = useIncomeInvalidation();
+  return useMutation({
+    mutationFn: (id) => api.delete(`/api/income/${id}/`),
     onSuccess: invalidate,
   });
 }

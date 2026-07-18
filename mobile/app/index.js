@@ -122,9 +122,14 @@ export default function HomeScreen() {
           >
             {formatMoney(balanceValue)}
           </Text>
-          <Pressable onPress={() => router.push("/income")} style={s.addMoney}>
-            <Text style={s.addMoneyText}>+ Add money</Text>
-          </Pressable>
+          <View style={s.balanceActions}>
+            <Pressable onPress={() => router.push("/income/new")} style={s.addMoney}>
+              <Text style={s.addMoneyText}>+ Add money</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push("/income")}>
+              <Text style={s.viewAll}>View all</Text>
+            </Pressable>
+          </View>
         </Card>
 
         {/* This month */}
@@ -245,8 +250,15 @@ const s = StyleSheet.create({
 
   balanceCard: { marginBottom: spacing.lg },
   balanceAmount: { fontSize: 40, fontWeight: "700", marginTop: spacing.xs },
-  addMoney: { marginTop: spacing.md, alignSelf: "flex-start" },
+  balanceActions: {
+    marginTop: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  addMoney: { alignSelf: "flex-start" },
   addMoneyText: { color: colors.primary, fontWeight: "600", fontSize: 15 },
+  viewAll: { color: colors.textMuted, fontWeight: "600", fontSize: 14 },
 
   sectionHead: {
     flexDirection: "row",
