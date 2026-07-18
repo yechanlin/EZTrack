@@ -14,6 +14,10 @@ node_modules/
 dist/
 *.log
 
+# Generated native projects (recreated by `expo prebuild` / `expo run:ios`)
+mobile/ios/
+mobile/android/
+
 # macOS
 .DS_Store
 
