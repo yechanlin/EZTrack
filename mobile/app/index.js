@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../src/auth/AuthContext";
 import { useBalance, useExpenses, useRunRecurring, useSummary } from "../src/api/hooks";
 import { Card, ErrorBanner } from "../src/components/ui";
-import { currentYearMonth, formatMoney, monthLabel, shortDate } from "../src/format";
+import { currentYearMonth, formatMoney, monthLabel, shortDate, todayLocal } from "../src/format";
 import { colors, font, radius, spacing } from "../src/theme";
 
 export default function HomeScreen() {
@@ -86,6 +86,13 @@ export default function HomeScreen() {
   const categories = data?.categories ?? [];
   const rows = expenses.data ?? [];
 
+  // Today's spend, summed from the month's expenses already loaded — today is always
+  // inside the current month, so no extra request is needed. Compare against the
+  // DEVICE's local date (todayLocal), the same basis the date picker writes with, so
+  // an expense added "today" always counts here regardless of the server's timezone.
+  const today = todayLocal();
+  const todaySpent = rows.reduce((sum, e) => (e.date === today ? sum + Number(e.amount) : sum), 0);
+
   return (
     <SafeAreaView style={s.safe} edges={["top", "left", "right"]}>
       <ScrollView
@@ -113,6 +120,14 @@ export default function HomeScreen() {
 
         {/* Balance */}
         <Card style={s.balanceCard}>
+          {/* Today's spend, overlaid in the top-right corner of the balance card.
+              Absolute positioning lifts it out of the normal top-to-bottom flow so it
+              sits over the card rather than pushing the balance down. */}
+          <View style={s.todayPill}>
+            <Text style={s.todayLabel}>Today</Text>
+            <Text style={s.todayAmount}>{formatMoney(todaySpent)}</Text>
+          </View>
+
           <Text style={font.label}>Current balance</Text>
           <Text
             style={[
@@ -262,6 +277,18 @@ const s = StyleSheet.create({
 
   balanceCard: { marginBottom: spacing.lg },
   balanceAmount: { fontSize: 40, fontWeight: "700", marginTop: spacing.xs },
+  todayPill: {
+    position: "absolute",
+    top: spacing.md,
+    right: spacing.md,
+    alignItems: "flex-end",
+    backgroundColor: "#EEF2FF", // light indigo tint; distinct from the white card
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  todayLabel: { fontSize: 12, fontWeight: "600", color: colors.primary, letterSpacing: 0.3 },
+  todayAmount: { fontSize: 18, fontWeight: "700", color: colors.primary, marginTop: 1 },
   balanceActions: {
     marginTop: spacing.md,
     flexDirection: "row",
