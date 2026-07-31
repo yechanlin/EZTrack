@@ -82,6 +82,24 @@ export function useExpenses(year, month) {
   });
 }
 
+/**
+ * One category's expenses for a month. The key starts with "expenses" on purpose,
+ * so useLedgerInvalidation() (which invalidates the whole ["expenses"] surface)
+ * refreshes this screen too after an edit or delete.
+ */
+export function useExpensesByCategory(year, month, categoryId) {
+  return useQuery({
+    queryKey: ["expenses", year, month, "cat", categoryId],
+    queryFn: async () => {
+      const data = await api.get(
+        `/api/expenses/?year=${year}&month=${month}&category=${categoryId}`,
+      );
+      return data.results ?? data;
+    },
+    enabled: categoryId != null,
+  });
+}
+
 export function useMonths() {
   return useQuery({ queryKey: keys.months, queryFn: () => api.get("/api/months/") });
 }

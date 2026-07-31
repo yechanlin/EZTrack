@@ -87,6 +87,8 @@ function RootNavigator() {
       <Stack.Screen name="history" options={{ title: "History" }} />
       <Stack.Screen name="month/[ym]" options={{ title: "" }} />
       <Stack.Screen name="recurring" options={{ title: "Recurring" }} />
+      {/* Title is set inside the screen (to the category name) via <Stack.Screen>. */}
+      <Stack.Screen name="category/[id]" options={{ title: "Category" }} />
     </Stack>
   );
 }

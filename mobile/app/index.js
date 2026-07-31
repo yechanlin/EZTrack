@@ -179,10 +179,22 @@ export default function HomeScreen() {
         ) : (
           <Card style={{ paddingVertical: spacing.sm }}>
             {categories.map((c, i) => (
-              <View key={c.id} style={[s.catRow, i > 0 && s.divider]}>
+              <Pressable
+                key={c.id}
+                onPress={() =>
+                  router.push({
+                    pathname: `/category/${c.id}`,
+                    params: { name: c.name, year, month },
+                  })
+                }
+                style={({ pressed }) => [s.catRow, i > 0 && s.divider, pressed && { opacity: 0.6 }]}
+              >
                 <Text style={font.body}>{c.name}</Text>
-                <Text style={s.catTotal}>{formatMoney(c.total)}</Text>
-              </View>
+                <View style={s.catRight}>
+                  <Text style={s.catTotal}>{formatMoney(c.total)}</Text>
+                  <Text style={s.chevron}>›</Text>
+                </View>
+              </Pressable>
             ))}
           </Card>
         )}
@@ -286,6 +298,8 @@ const s = StyleSheet.create({
     alignItems: "center",
     paddingVertical: spacing.md,
   },
+  catRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  chevron: { fontSize: 22, color: colors.textMuted, marginTop: -2 },
   expenseRow: {
     flexDirection: "row",
     justifyContent: "space-between",

@@ -126,7 +126,18 @@ class ExpenseViewSet(OwnedLedgerViewSet):
 
     def get_queryset(self):
         # select_related avoids one extra query per row to fetch category_name.
-        return super().get_queryset().select_related("category")
+        qs = super().get_queryset().select_related("category")
+
+        # Optional ?category=<id>, used by the category-detail screen so it fetches
+        # exactly that category's expenses rather than filtering a page client-side
+        # (which would silently miss rows past the pagination limit). Still scoped to
+        # the caller by the base queryset, so it can't surface anyone else's data.
+        category = self.request.query_params.get("category")
+        if category:
+            if not category.isdigit():
+                raise ValidationError("category must be an integer id.")
+            qs = qs.filter(category_id=int(category))
+        return qs
 
 
 class IncomeViewSet(OwnedLedgerViewSet):

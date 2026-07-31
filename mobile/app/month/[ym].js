@@ -1,5 +1,5 @@
-import { useLocalSearchParams } from "expo-router";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useExpenses, useSummary } from "../../src/api/hooks";
 import { Card, ErrorBanner } from "../../src/components/ui";
@@ -14,6 +14,7 @@ import { colors, font, spacing } from "../../src/theme";
  * two separate dynamic segments in one path the way /month/2026/6 would need.
  */
 export default function MonthDetailScreen() {
+  const router = useRouter();
   const { ym } = useLocalSearchParams();
   const [year, month] = String(ym).split("-").map(Number);
 
@@ -56,10 +57,22 @@ export default function MonthDetailScreen() {
       ) : (
         <Card style={{ paddingVertical: spacing.sm }}>
           {categories.map((c, i) => (
-            <View key={c.id} style={[s.row, i > 0 && s.divider]}>
+            <Pressable
+              key={c.id}
+              onPress={() =>
+                router.push({
+                  pathname: `/category/${c.id}`,
+                  params: { name: c.name, year, month },
+                })
+              }
+              style={({ pressed }) => [s.row, i > 0 && s.divider, pressed && { opacity: 0.6 }]}
+            >
               <Text style={font.body}>{c.name}</Text>
-              <Text style={s.amount}>{formatMoney(c.total)}</Text>
-            </View>
+              <View style={s.catRight}>
+                <Text style={s.amount}>{formatMoney(c.total)}</Text>
+                <Text style={s.chevron}>›</Text>
+              </View>
+            </Pressable>
           ))}
         </Card>
       )}
@@ -104,4 +117,6 @@ const s = StyleSheet.create({
   },
   divider: { borderTopWidth: 1, borderTopColor: colors.border },
   amount: { fontSize: 16, fontWeight: "600", color: colors.text },
+  catRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  chevron: { fontSize: 22, color: colors.textMuted, marginTop: -2 },
 });
